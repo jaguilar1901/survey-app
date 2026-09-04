@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive BI Report | Internal Services Audit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="dashboard-wrapper">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="line-chart"></i>
+        <span>UAM BI Analytics</span>
+      </div>
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-tab="overview" onclick="switchTab('overview')">
+          <i data-lucide="layout-dashboard"></i> Executive Overview
+        </button>
+        <button class="nav-btn" data-tab="yoy-analysis" onclick="switchTab('yoy-analysis')">
+          <i data-lucide="trending-up"></i> Análisis YoY (2025 vs 2026)
+        </button>
+        <button class="nav-btn" data-tab="pareto" onclick="switchTab('pareto')">
+          <i data-lucide="sliders"></i> Drivers & Pareto
+        </button>
+        <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')">
+          <i data-lucide="message-square"></i> Voice of Customer (VOC)
+        </button>
+      </nav>
+      <div class="status-card" id="status-card">
+        <i data-lucide="database"></i> <span id="status-text">Conectando...</span>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <!-- HEADER CON FILTROS GLOBALES -->
+      <header class="top-header">
+        <div>
+          <h1>Auditoría de Servicios Internos & CSAT</h1>
+          <p class="subtitle">Análisis comparativo de rendimiento operativo, NPS interno y áreas de mejora priorizadas</p>
+        </div>
+        <div class="header-actions">
+          <div class="filter-group">
+            <label><i data-lucide="calendar"></i> Año:</label>
+            <select id="target-year-selector">
+              <option value="ALL">2025 vs 2026</option>
+              <option value="2025">Solo 2025</option>
+              <option value="2026">Solo 2026</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label><i data-lucide="filter"></i> Depto:</label>
+            <select id="target-dept-selector">
+              <option value="ALL">Todos los Departamentos</option>
+              <option value="IT">IT Support</option>
+              <option value="Facilities">Facilities & Infraestructura</option>
+              <option value="Finance">Finance & Payroll</option>
+              <option value="Procurement">Procurement</option>
+              <option value="TA">Talent Acquisition</option>
+              <option value="PX">People Experience (DX)</option>
+              <option value="LD">Learning & Development</option>
+              <option value="HRBP">HRBP</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <!-- METRIC CARDS (SCORECARD EJECUTIVO) -->
+      <section class="kpi-grid">
+        <div class="kpi-card blue">
+          <div class="kpi-header">
+            <span class="kpi-title">MUESTRA AUDITADA (2025/2026)</span>
+            <span class="kpi-icon"><i data-lucide="users"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-total-sample">0</div>
+          <div class="kpi-sub" id="kpi-sample-diff">0 respuestas en 2026</div>
+        </div>
+
+        <div class="kpi-card green">
+          <div class="kpi-header">
+            <span class="kpi-title">CSAT PROMEDIO GLOBAL</span>
+            <span class="kpi-icon"><i data-lucide="award"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-csat-global">0.0 / 5.0</div>
+          <div class="kpi-sub positive" id="kpi-csat-yoy"><i data-lucide="arrow-up-right"></i> +0.0 vs 2025</div>
+        </div>
+
+        <div class="kpi-card purple">
+          <div class="kpi-header">
+            <span class="kpi-title">ÍNDICE DE SATISFACCIÓN NETA</span>
+            <span class="kpi-icon"><i data-lucide="zap"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-nps">+0</div>
+          <div class="kpi-sub" id="kpi-nps-label">Calculando...</div>
+        </div>
+
+        <div class="kpi-card amber">
+          <div class="kpi-header">
+            <span class="kpi-title">MUESTRA DE FEEDBACK (VOC)</span>
+            <span class="kpi-icon"><i data-lucide="message-circle"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-voc-count">0</div>
+          <div class="kpi-sub">Hallazgos cualitativos clasificados</div>
+        </div>
+      </section>
+
+      <!-- TAB 1: EXECUTIVE OVERVIEW -->
+      <div id="tab-overview" class="tab-content">
+        <section class="insights-grid" id="insights-grid">
+          <!-- Insights automáticos, generados dinámicamente a partir de los datos filtrados -->
+        </section>
+
+        <div class="charts-grid-2">
+          <div class="chart-card">
+            <div class="card-header">
+              <h3><i data-lucide="bar-chart-3"></i> CSAT Promedio por Departamento Auditado</h3>
+              <span class="tag-info">Escala 1 - 5</span>
+            </div>
+            <div class="chart-container">
+              <canvas id="deptPerformanceChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="card-header">
+              <h3><i data-lucide="pie-chart"></i> Distribución de Satisfacción (Top/Bottom Performers)</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="distributionChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card full-width">
+          <div class="card-header">
+            <h3><i data-lucide="list-ordered"></i> Ranking de Departamentos</h3>
+            <span class="tag-info" id="dept-ranking-tag">Ordenado por CSAT</span>
+          </div>
+          <div class="ranking-table-wrap" id="dept-ranking-table">
+            <!-- Tabla generada dinámicamente -->
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: YOY ANALYSIS -->
+      <div id="tab-yoy-analysis" class="tab-content hidden">
+        <div class="charts-grid-2">
+          <div class="chart-card">
+            <div class="card-header">
+              <h3><i data-lucide="trending-up"></i> Variación Interanual (% Variance CSAT YoY)</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="yoyVarianceChart"></canvas>
+              <p id="yoyVarianceEmpty" class="chart-empty-msg hidden">Selecciona "2025 vs 2026" en el filtro de Año para ver la variación interanual.</p>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="card-header">
+              <h3><i data-lucide="radar"></i> Matriz Radar de Competencias de Servicio</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="radarChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: DRIVERS & PARETO (ÁREAS DE MEJORA) -->
+      <div id="tab-pareto" class="tab-content hidden">
+        <div class="charts-grid-2">
+          <div class="chart-card">
+            <div class="card-header">
+              <h3><i data-lucide="sliders"></i> Diagrama de Pareto: Fuentes Principales de Fricción</h3>
+            </div>
+            <div class="chart-container">
+              <canvas id="paretoChart"></canvas>
+            </div>
+          </div>
+          <div class="info-card">
+            <h3><i data-lucide="target"></i> Matriz de Impacto vs. Esfuerzo (Acciones Requeridas)</h3>
+            <div class="action-matrix">
+              <div class="matrix-box priority-high">
+                <strong><i data-lucide="alert-triangle"></i> Quick Wins / Prioridad 1</strong>
+                <p>Digitalización de solicitudes de HRBP y Finance (Reducción de SLA de 5 días a 48h).</p>
+              </div>
+              <div class="matrix-box priority-mid">
+                <strong><i data-lucide="clock"></i> Proyectos Estructurales</strong>
+                <p>Ampliación de comedores y climatización en instalaciones (Facilities).</p>
+              </div>
+              <div class="matrix-box priority-low">
+                <strong><i data-lucide="check-circle-2"></i> Mantener Estándar</strong>
+                <p>Soporte técnico presencial IT y tiempos de respuesta de Talent Acquisition.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: FEEDBACK & VOC -->
+      <div id="tab-feedback" class="tab-content hidden">
+        <section class="feedback-section">
+          <div class="section-header">
+            <div>
+              <h2><i data-lucide="messages-square"></i> Voice of Customer (VOC) & Feedback Cualitativo</h2>
+              <p class="subtitle">Análisis de sentimiento categorizado bajo metodología Start / Stop / Continue</p>
+            </div>
+            <div class="voc-filters">
+              <button class="filter-btn active" onclick="filterVOC('ALL', this)">Todos</button>
+              <button class="filter-btn" onclick="filterVOC('stop', this)">Puntos Críticos (Stop)</button>
+              <button class="filter-btn" onclick="filterVOC('start', this)">Sugerencias (Start)</button>
+              <button class="filter-btn" onclick="filterVOC('continue', this)">A Reconocer (Continue)</button>
+            </div>
+          </div>
+          <div class="voc-sentiment" id="voc-sentiment-summary">
+            <!-- Barra de sentimiento generada dinámicamente -->
+          </div>
+          <div class="comments-grid" id="dx-comments-grid">
+            <!-- Cargados dinámicamente -->
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
