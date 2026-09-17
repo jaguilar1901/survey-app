@@ -13,7 +13,46 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <div class="dashboard-wrapper">
+  <!-- PANTALLA DE LOGIN (correo + contraseña, solo @uassistme.com) -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="brand login-brand">
+        <i data-lucide="line-chart"></i>
+        <span>UAM BI Analytics</span>
+      </div>
+      <p class="login-subtitle">Acceso restringido a personal de Uassist.ME</p>
+
+      <label class="login-label" for="login-email">Correo corporativo</label>
+      <input type="email" id="login-email" class="login-input" placeholder="nombre.apellido@uassistme.com" autocomplete="email">
+
+      <label class="login-label" for="login-password">Contraseña</label>
+      <input type="password" id="login-password" class="login-input" placeholder="••••••••" autocomplete="current-password">
+
+      <button id="btn-login" class="btn-export login-btn" type="button">
+        <i data-lucide="log-in"></i> Iniciar sesión
+      </button>
+      <button id="btn-signup" class="btn-export login-btn login-btn-secondary" type="button">
+        <i data-lucide="user-plus"></i> Crear cuenta (primera vez)
+      </button>
+      <p class="login-sent-msg">"Crear cuenta" solo funciona si un administrador ya agregó tu correo en "Gestión de Accesos".</p>
+
+      <p id="login-error" class="login-error hidden"></p>
+    </div>
+  </div>
+
+  <!-- PANTALLA DE ACCESO DENEGADO (autenticado pero sin rol asignado) -->
+  <div id="denied-screen" class="login-screen hidden">
+    <div class="login-card">
+      <i data-lucide="shield-alert" class="denied-icon"></i>
+      <h2>Sin acceso asignado</h2>
+      <p class="login-subtitle">Tu correo (<strong id="denied-email"></strong>) todavía no tiene un rol asignado en este dashboard. Pide a un administrador que te agregue desde "Gestión de Accesos".</p>
+      <button id="btn-logout-denied" class="btn-export login-btn" type="button">
+        <i data-lucide="log-out"></i> Cerrar sesión
+      </button>
+    </div>
+  </div>
+
+  <div class="dashboard-wrapper hidden" id="app-root">
     <!-- SIDEBAR -->
     <aside class="sidebar">
       <div class="brand">
@@ -33,9 +72,20 @@
         <button class="nav-btn" data-tab="feedback" onclick="switchTab('feedback')">
           <i data-lucide="message-square"></i> Voice of Customer (VOC)
         </button>
+        <button class="nav-btn" data-tab="admin" onclick="switchTab('admin')">
+          <i data-lucide="shield"></i> Panel Administrativo
+        </button>
+        <button class="nav-btn hidden" id="nav-access" data-tab="access" onclick="switchTab('access')">
+          <i data-lucide="user-cog"></i> Gestión de Accesos
+        </button>
       </nav>
-      <div class="status-card" id="status-card">
-        <i data-lucide="database"></i> <span id="status-text">Conectando...</span>
+      <div class="user-card" id="user-card">
+        <div class="user-card-name" id="user-card-name">—</div>
+        <div class="user-card-role" id="user-card-role">—</div>
+        <button id="btn-logout" class="user-card-logout" type="button"><i data-lucide="log-out"></i> Cerrar sesión</button>
+      </div>
+      <div class="status-card connecting" id="status-card">
+        <i data-lucide="loader-circle" id="status-icon"></i> <span id="status-text">Conectando...</span>
       </div>
     </aside>
 
@@ -44,7 +94,7 @@
       <!-- HEADER CON FILTROS GLOBALES -->
       <header class="top-header">
         <div>
-          <h1>Auditoría de Servicios Internos & CSAT</h1>
+          <h1><i data-lucide="activity"></i> Auditoría de Servicios Internos & CSAT</h1>
           <p class="subtitle">Análisis comparativo de rendimiento operativo, NPS interno y áreas de mejora priorizadas</p>
         </div>
         <div class="header-actions">
@@ -70,6 +120,9 @@
               <option value="HRBP">HRBP</option>
             </select>
           </div>
+          <button id="btn-export-pdf" class="btn-export" type="button">
+            <i data-lucide="download"></i> Descargar PDF
+          </button>
         </div>
       </header>
 
@@ -80,7 +133,7 @@
             <span class="kpi-title">MUESTRA AUDITADA (2025/2026)</span>
             <span class="kpi-icon"><i data-lucide="users"></i></span>
           </div>
-          <div class="kpi-value" id="kpi-total-sample">0</div>
+          <div class="kpi-value loading" id="kpi-total-sample">0</div>
           <div class="kpi-sub" id="kpi-sample-diff">0 respuestas en 2026</div>
         </div>
 
@@ -89,7 +142,7 @@
             <span class="kpi-title">CSAT PROMEDIO GLOBAL</span>
             <span class="kpi-icon"><i data-lucide="award"></i></span>
           </div>
-          <div class="kpi-value" id="kpi-csat-global">0.0 / 5.0</div>
+          <div class="kpi-value loading" id="kpi-csat-global">0.0 / 5.0</div>
           <div class="kpi-sub positive" id="kpi-csat-yoy"><i data-lucide="arrow-up-right"></i> +0.0 vs 2025</div>
         </div>
 
@@ -98,7 +151,7 @@
             <span class="kpi-title">ÍNDICE DE SATISFACCIÓN NETA</span>
             <span class="kpi-icon"><i data-lucide="zap"></i></span>
           </div>
-          <div class="kpi-value" id="kpi-nps">+0</div>
+          <div class="kpi-value loading" id="kpi-nps">+0</div>
           <div class="kpi-sub" id="kpi-nps-label">Calculando...</div>
         </div>
 
@@ -107,7 +160,7 @@
             <span class="kpi-title">MUESTRA DE FEEDBACK (VOC)</span>
             <span class="kpi-icon"><i data-lucide="message-circle"></i></span>
           </div>
-          <div class="kpi-value" id="kpi-voc-count">0</div>
+          <div class="kpi-value loading" id="kpi-voc-count">0</div>
           <div class="kpi-sub">Hallazgos cualitativos clasificados</div>
         </div>
       </section>
@@ -158,7 +211,7 @@
             </div>
             <div class="chart-container">
               <canvas id="yoyVarianceChart"></canvas>
-              <p id="yoyVarianceEmpty" class="chart-empty-msg hidden">Selecciona "2025 vs 2026" en el filtro de Año para ver la variación interanual.</p>
+              <p id="yoyVarianceEmpty" class="chart-empty-msg hidden"><i data-lucide="info"></i> Selecciona "2025 vs 2026" en el filtro de Año para ver la variación interanual.</p>
             </div>
           </div>
           <div class="chart-card">
@@ -219,10 +272,114 @@
             </div>
           </div>
           <div class="voc-sentiment" id="voc-sentiment-summary">
-            <!-- Barra de sentimiento generada dinámicamente -->
+            <!-- Barra Start/Stop/Continue generada dinámicamente -->
+          </div>
+          <div class="section-header voc-ai-header">
+            <div>
+              <h3><i data-lucide="sparkles"></i> Sentimiento (IA)</h3>
+              <p class="subtitle" id="voc-ai-status">Analizando comentarios...</p>
+            </div>
+            <div class="voc-filters">
+              <button class="filter-btn active" onclick="filterVOCSentiment('ALL', this)">Todos</button>
+              <button class="filter-btn" onclick="filterVOCSentiment('positive', this)">😊 Positivo</button>
+              <button class="filter-btn" onclick="filterVOCSentiment('negative', this)">☹️ Negativo</button>
+              <button class="filter-btn" onclick="filterVOCSentiment('neutral', this)">😐 Neutral</button>
+            </div>
+          </div>
+          <div class="voc-sentiment" id="voc-ai-sentiment-summary">
+            <!-- Barra Positivo/Negativo/Neutral generada dinámicamente -->
           </div>
           <div class="comments-grid" id="dx-comments-grid">
             <!-- Cargados dinámicamente -->
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 5: PANEL ADMINISTRATIVO -->
+      <div id="tab-admin" class="tab-content hidden">
+        <section class="feedback-section">
+          <div class="section-header">
+            <div>
+              <h2><i data-lucide="shield"></i> Panel Administrativo de Comentarios</h2>
+              <p class="subtitle">Marca como "no aplica" los comentarios que no correspondan — desaparecen de VOC para todos, en cualquier navegador. Respeta los filtros de Año/Depto de arriba.</p>
+            </div>
+          </div>
+          <div class="admin-controls">
+            <div class="filter-group admin-search-group">
+              <i data-lucide="search"></i>
+              <input type="text" id="admin-search" class="admin-search" placeholder="Buscar en los comentarios...">
+            </div>
+            <div class="filter-group">
+              <label><i data-lucide="tag"></i></label>
+              <select id="admin-category-filter">
+                <option value="ALL">Todas las categorías</option>
+                <option value="stop">Puntos Críticos</option>
+                <option value="start">Sugerencias</option>
+                <option value="continue">A Reconocer</option>
+              </select>
+            </div>
+            <label class="filter-group admin-checkbox">
+              <input type="checkbox" id="admin-only-hidden"> Solo ocultos
+            </label>
+            <span class="tag-info" id="admin-comments-count">0 comentarios</span>
+          </div>
+          <div class="ranking-table-wrap admin-table-wrap">
+            <table class="ranking-table admin-table">
+              <thead>
+                <tr><th>Categoría</th><th>Comentario</th><th>Depto</th><th>Año</th><th></th></tr>
+              </thead>
+              <tbody id="admin-comments-list">
+                <!-- Cargados dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 6: GESTIÓN DE ACCESOS (solo admins) -->
+      <div id="tab-access" class="tab-content hidden">
+        <section class="feedback-section">
+          <div class="section-header">
+            <div>
+              <h2><i data-lucide="user-cog"></i> Gestión de Accesos</h2>
+              <p class="subtitle">Agrega administradores (ven todo) o supervisores (ven únicamente los equipos que les asignes en "Choose your team"). Después de agregarlos aquí, cada persona crea su propia cuenta (correo + contraseña) desde la pantalla de login con "Crear cuenta".</p>
+            </div>
+          </div>
+          <form id="access-form" class="access-form">
+            <div class="filter-group">
+              <label>Nombre completo</label>
+              <input type="text" id="access-name" class="admin-search" placeholder="Nombre y apellido" required>
+            </div>
+            <div class="filter-group">
+              <label>Correo (@uassistme.com)</label>
+              <input type="email" id="access-email" class="admin-search" placeholder="nombre.apellido@uassistme.com" required>
+            </div>
+            <div class="filter-group">
+              <label>Rol</label>
+              <select id="access-role">
+                <option value="supervisor">Supervisor (solo su equipo)</option>
+                <option value="admin">Administrador (ve todo)</option>
+              </select>
+            </div>
+            <div class="filter-group access-teams-group hidden" id="access-teams-group">
+              <label>Equipo(s) que puede ver</label>
+              <select id="access-teams" multiple size="6"></select>
+            </div>
+            <button type="submit" class="btn-export" id="btn-access-submit">
+              <i data-lucide="user-plus"></i> Agregar
+            </button>
+          </form>
+          <p id="access-error" class="login-error hidden"></p>
+
+          <div class="ranking-table-wrap admin-table-wrap">
+            <table class="ranking-table admin-table">
+              <thead>
+                <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Equipos</th><th></th></tr>
+              </thead>
+              <tbody id="access-users-list">
+                <!-- Cargado dinámicamente -->
+              </tbody>
+            </table>
           </div>
         </section>
       </div>

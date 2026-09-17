@@ -3,3 +3,12 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Datos de encuesta con PII de empleados (nombres, correos, comentarios) —
+# nunca deben subirse a un repo público. Ver nota en el historial: las
+# versiones 2025/2026 anteriores a esto ya quedaron expuestas y necesitan
+# limpieza aparte.
+*.xlsx
+*.csv
+consolidated_survey_full.json
+pairs_debug.json

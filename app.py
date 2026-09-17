@@ -1,91 +1,50 @@
-import hashlib
-import os
 import re
-
 import pandas as pd
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
 
-load_dotenv()
-
-DB_URI = os.environ["DATABASE_URL"]
-
-
-def limpiar_nombre_columna(col, max_len=60):
-    col_str = str(col).strip().lower()
-
-    # Reemplazar espacios y guiones por guion bajo
-    col_clean = re.sub(r"[\s\-]+", "_", col_str)
-
-    # Eliminar caracteres especiales
-    col_clean = re.sub(r"[^a-z0-9_]", "", col_clean)
-
-    # Evitar que inicie con número
-    if col_clean and col_clean[0].isdigit():
-        col_clean = f"col_{col_clean}"
-
-    if not col_clean:
-        col_clean = "columna_vacia"
-
-    # Si el nombre supera el límite de Postgres (63 caracteres),
-    # truncamos y agregamos un hash único basado en la pregunta original
-    if len(col_clean) > max_len:
-        hash_suffix = hashlib.md5(col_str.encode("utf-8")).hexdigest()[:6]
-        col_clean = f"{col_clean[: max_len - 7]}_{hash_suffix}"
-
-    return col_clean
+# Coloca esto justo ARRIBA de def es_comentario_accionable(texto):
+NOISY_PATTERNS = re.compile(
+    r'^\s*('
+    r'[\.\,\-\_\s\*\/\#\+]+|'
+    r'n/?a|na|no\s+aplica|no\s+aplicable|none|null|'
+    r'no|nada|ninguno|ninguna|sin\s+comentarios|no\s+comment(s)?|'
+    r'todo\s+bien|todo\s+excelente|excelente|all\s+good|all\s+great|all\s+ok|'
+    r'everything\s+is?\s+(good|fine|ok|great)|so\s+far\s+so\s+good|'
+    r'so\s+far\,?\s+i\s+have\s+generally\s+had\s+a\s+good\s+experience.*|'
+    r'i(\')?m\s+okay|i(\')?m\s+good|'
+    r'nothing|nothing\s+else|nothing\s+to\s+add|not?\s+at\s+the\s+moment|'
+    r'no\s+ideas(\s+to\s+give)?|no\s+ideas\s+at\s+the\s+moment|'
+    r'no\s+recommendations(\s+at\s+this\s+moment)?|'
+    r'no\s+tengo\s+(sugerencias?|comentarios?|ideas?|quejas?|observaciones?)(s)?(\s+al\s+respecto)?|'
+    r'no\s+(ideas?|recommendations?|suggestions?|complaints?|issues?)|'
+    r'i\s+have\s+no\s+(ideas?|suggestions?|complaints?|comments?)|'
+    r'i\s+don(\')?t\s+have\s+(any\s+)?(ideas?|suggestions?|complaints?|comments?)|'
+    r'no\,\s+i\s+do\s+not|'
+    r'i\s+haven(\')?t\s+used\s+it.*|no\s+(uso|utilizo|visito).+|(haven\'?t|don\'?t)\s+use.+|'
+    r'i\s+don(\')?t\s+know|idk|i(\')?m\s+not\s+sure|neutral|enough|it(\')?s?\s+enough'
+    r')\s*[\.\!\?]*$',
+    re.IGNORECASE
+)
 
 
-def procesar_y_subir(archivo, nombre_tabla, engine):
-    print(f"\n--- Procesando '{archivo}' -> Tabla: '{nombre_tabla}' ---")
+def es_comentario_accionable(texto):
+    if not isinstance(texto, str) or not texto.strip():
+        return False
+        
+    clean_text = texto.strip()
 
-    if archivo.endswith(".csv"):
-        df = pd.read_csv(archivo)
-    else:
-        df = pd.read_excel(archivo)
+    # 1. Descartar si coincide con el patrón Regex de ruido
+    if NOISY_PATTERNS.match(clean_text):
+        return False
 
-    # Limpiar encabezados
-    df.columns = [limpiar_nombre_columna(c) for c in df.columns]
+    # 2. Descartar textos de 1-2 palabras genéricas
+    words = [w for w in re.findall(r'\b\w+\b', clean_text) if len(w) > 1]
+    if len(words) < 2 and clean_text.lower() not in ["orden", "airflow"]:
+        return False
 
-    # Control estricto de nombres duplicados
-    columnas_unicas = []
-    vistas = {}
-    for c in df.columns:
-        if c in vistas:
-            vistas[c] += 1
-            columnas_unicas.append(f"{c}_{vistas[c]}")
-        else:
-            vistas[c] = 0
-            columnas_unicas.append(c)
-    df.columns = columnas_unicas
-
-    # Subir a Supabase
-    df.to_sql(
-        nombre_tabla,
-        engine,
-        if_exists="replace",
-        index=False,
-        chunksize=500,
-    )
-    print(f"¡Éxito! Se cargaron {len(df)} filas en la tabla '{nombre_tabla}'.")
-
-    # if_exists="replace" dropea y recrea la tabla, lo que borra RLS y sus
-    # políticas. Hay que reactivarlas después de cada carga.
-    with engine.begin() as conn:
-        conn.exec_driver_sql(f'ALTER TABLE public."{nombre_tabla}" ENABLE ROW LEVEL SECURITY;')
-        conn.exec_driver_sql(
-            f'CREATE POLICY "Public read access" ON public."{nombre_tabla}" '
-            f"FOR SELECT TO anon, authenticated USING (true);"
-        )
-    print(f"RLS reactivado en '{nombre_tabla}'.")
+    return True
 
 
-def main():
-    engine = create_engine(DB_URI)
-
-    procesar_y_subir("UAM Services Survey - 2025.xlsx", "Survey_2025", engine)
-    procesar_y_subir("UAM Services Survey - 2026.csv", "Survey_2026", engine)
-
-
-if __name__ == "__main__":
-    main()
+# Aplicación al DataFrame de pandas
+def filtrar_dataset(df, columna_comentarios='comments'):
+    mask = df[columna_comentarios].apply(es_comentario_accionable)
+    return df[mask].copy()
