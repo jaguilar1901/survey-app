@@ -14,8 +14,7 @@ let selectedDept = 'ALL';
 let selectedYear = 'ALL';
 let vocFilter = 'ALL';
 let vocSentimentFilter = 'ALL';
-let vocSentimentMap = new Map(); // comment_key -> "positive" | "negative" | "neutral"
-let sentimentEnsureStarted = false;
+let vocSentimentMap = new Map(); // comment_key -> "positive" | "negative" | "neutral", relleno por classifySentiment()
 
 // Comentarios ocultados manualmente desde el Panel Administrativo (tabla
 // hidden_comments en Supabase). Es un Set de "comment_key" para consulta
@@ -165,11 +164,10 @@ async function loadCurrentUserAndBoot() {
 
 async function initDashboard() {
   try {
-    const [res2025, res2026, resHidden, resSentiment] = await Promise.all([
+    const [res2025, res2026, resHidden] = await Promise.all([
       supabaseClient.from(SURVEY_TABLE).select("*").eq("survey_year", 2025),
       supabaseClient.from(SURVEY_TABLE).select("*").eq("survey_year", 2026),
       supabaseClient.from(HIDDEN_COMMENTS_TABLE).select("comment_key"),
-      supabaseClient.from("voc_sentiment").select("comment_key, sentiment")
     ]);
 
     if (res2025.error) throw res2025.error;
@@ -179,7 +177,6 @@ async function initDashboard() {
     rawData2025 = res2025.data || [];
     rawData2026 = res2026.data || [];
     hiddenCommentKeys = new Set((resHidden.data || []).map(r => r.comment_key));
-    vocSentimentMap = new Map((resSentiment.data || []).map(r => [r.comment_key, r.sentiment]));
 
     setConnectionStatus("connected", "check-circle-2", "Supabase DB Conectada");
     document.querySelectorAll(".kpi-value.loading").forEach(el => el.classList.remove("loading"));
@@ -375,7 +372,6 @@ function switchTab(tabId) {
     content.classList.toggle("hidden", content.id !== `tab-${tabId}`);
   });
 
-  if (tabId === "feedback") ensureSentimentAnalyzed();
   if (tabId === "access" && currentUser && currentUser.role === "admin") loadAccessTab();
 
   // Re-renderizar gráficos visibles para corregir tamaños de Canvas
@@ -1198,6 +1194,27 @@ function classifyComment(text) {
   return { category: "start", label: "Idea de Mejora" };
 }
 
+// SENTIMIENTO (Positivo/Negativo/Neutral) — clasificación instantánea por
+// palabras clave (mismo banco que classifyComment), sin depender de una IA
+// externa ni de una llamada de red. Se calcula al vuelo cada vez que se
+// renderiza VOC y se cachea en memoria (vocSentimentMap) solo para no
+// recalcular en cada re-render dentro de la misma sesión.
+function classifySentiment(text) {
+  const lower = text.toLowerCase();
+  const negHits = countKeywordHits(lower, SENTIMENT_KEYWORDS.stop);
+  const posHits = countKeywordHits(lower, SENTIMENT_KEYWORDS.continue);
+  if (negHits > posHits) return "negative";
+  if (posHits > negHits) return "positive";
+  return "neutral";
+}
+
+function sentimentFor(item) {
+  if (!vocSentimentMap.has(item.key)) {
+    vocSentimentMap.set(item.key, classifySentiment(item.text));
+  }
+  return vocSentimentMap.get(item.key);
+}
+
 function filterVOC(type, btnEl) {
   vocFilter = type;
   btnEl.parentElement.querySelectorAll(".filter-btn").forEach(btn => btn.classList.remove("active"));
@@ -1237,14 +1254,12 @@ function renderVOC() {
   let shown = 0;
   all.forEach(item => {
     const { category, label: catLabel } = classifyComment(item.text);
-    const sentiment = vocSentimentMap.get(item.key);
+    const sentiment = sentimentFor(item);
 
     if (vocFilter !== 'ALL' && category !== vocFilter) return;
     if (vocSentimentFilter !== 'ALL' && sentiment !== vocSentimentFilter) return;
 
-    const sentimentTag = sentiment
-      ? `<span class="tag sentiment-${sentiment}">${SENTIMENT_LABELS[sentiment]}</span>`
-      : `<span class="tag sentiment-pending">⏳ Analizando...</span>`;
+    const sentimentTag = `<span class="tag sentiment-${sentiment}">${SENTIMENT_LABELS[sentiment]}</span>`;
 
     const card = document.createElement("div");
     card.className = "comment-card";
@@ -1267,21 +1282,15 @@ function renderVOC() {
   if (window.lucide) lucide.createIcons();
 }
 
-// SENTIMIENTO IA (Positivo/Negativo/Neutral) — clasificado con Claude vía un
-// Edge Function de Supabase (voc-sentiment), que guarda el resultado en la
-// tabla voc_sentiment (comment_key -> sentiment) para no reprocesar el mismo
-// comentario dos veces. Se dispara la primera vez que se abre la pestaña VOC.
+// Barra-resumen Positivo/Negativo/Neutral, calculada al instante con
+// classifySentiment() (ver sentimentFor arriba) — sin llamadas de red.
 function renderVocAiSentimentSummary() {
   const container = document.getElementById("voc-ai-sentiment-summary");
   if (!container) return;
 
   const all = activeYears().flatMap(y => extractVisibleComments(DATASET_BY_YEAR[y](), selectedDept, y));
   const counts = { positive: 0, negative: 0, neutral: 0 };
-  let pending = 0;
-  all.forEach(c => {
-    const s = vocSentimentMap.get(c.key);
-    if (s) counts[s]++; else pending++;
-  });
+  all.forEach(c => counts[sentimentFor(c)]++);
   const total = all.length || 1;
   const pct = (n) => ((n / total) * 100).toFixed(1);
 
@@ -1299,41 +1308,7 @@ function renderVocAiSentimentSummary() {
   `;
 
   const statusEl = document.getElementById("voc-ai-status");
-  if (statusEl) {
-    statusEl.textContent = pending > 0
-      ? `Analizando comentarios... (${total - pending}/${total})`
-      : `${total} comentarios analizados por IA.`;
-  }
-}
-
-async function ensureSentimentAnalyzed() {
-  if (sentimentEnsureStarted) return;
-  sentimentEnsureStarted = true;
-
-  const all = [2025, 2026].flatMap(y => extractVisibleComments(DATASET_BY_YEAR[y](), 'ALL', y));
-  const pending = all.filter(c => !vocSentimentMap.has(c.key));
-  if (pending.length === 0) return;
-
-  const BATCH_SIZE = 25;
-  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-    const batch = pending.slice(i, i + BATCH_SIZE);
-    try {
-      const { data, error } = await supabaseClient.functions.invoke("voc-sentiment", {
-        body: { comments: batch.map(c => ({ key: c.key, text: c.text })) },
-      });
-      if (error || !data || !data.results) {
-        console.error("Error analizando sentimiento:", error || data);
-        continue;
-      }
-      const rows = data.results.map(r => ({ comment_key: r.key, sentiment: r.sentiment }));
-      const { error: upsertError } = await supabaseClient.from("voc_sentiment").upsert(rows, { onConflict: "comment_key" });
-      if (upsertError) console.error("Error guardando sentimiento:", upsertError);
-      rows.forEach(r => vocSentimentMap.set(r.comment_key, r.sentiment));
-      renderVOC();
-    } catch (err) {
-      console.error("Error llamando voc-sentiment:", err);
-    }
-  }
+  if (statusEl) statusEl.textContent = `${total} comentarios clasificados por palabras clave.`;
 }
 
 // PANEL ADMINISTRATIVO — moderación manual de comentarios VOC
